@@ -34,8 +34,12 @@ class LocationSign implements SignStrategy {
     final validate = userValidate?['validate'];
     
     String? faceId;
+    String? faceEnc;
     if (state.needFace) {
       faceId = await api.getFaceId();
+      if (faceId != null && faceId.isNotEmpty) {
+        faceEnc = await api.getFaceEnc(params.active.id, faceId);
+      }
     }
 
     return await api.locationSign(
@@ -45,7 +49,8 @@ class LocationSign implements SignStrategy {
       params.latitude!,
       params.longitude!,
       validate: validate,
-      faceId: faceId
+      faceId: faceId,
+      faceEnc: faceEnc
     );
   }
 

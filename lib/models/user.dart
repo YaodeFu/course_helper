@@ -6,6 +6,7 @@ class User {
   final String school;
   final String platform;
   Map<String, String>? imAccount;
+  Map<String, dynamic>? deviceInfo;
   bool status;
 
   User({
@@ -16,7 +17,8 @@ class User {
     required this.school,
     this.platform = 'chaoxing',
     this.imAccount,
-    this.status = true,
+    this.deviceInfo,
+    this.status = true
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,8 @@ class User {
         platform: json['platform'] ?? 'chaoxing',
         imAccount: json['imAccount'] != null ?
         Map<String, String>.from(json['imAccount']) : null,
+        deviceInfo: json['deviceInfo'] != null ?
+        Map<String, dynamic>.from(json['deviceInfo']) : null,
         status: json['status'] ?? true
     );
   }
@@ -42,6 +46,7 @@ class User {
       'school': school,
       'platform': platform,
       'imAccount': imAccount,
+      'deviceInfo': deviceInfo,
       'status': status
     };
   }

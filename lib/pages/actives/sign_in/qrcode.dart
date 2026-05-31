@@ -36,8 +36,12 @@ class QRCodeSign implements SignStrategy {
     final enc2 = userValidate?['enc2'];
 
     String? faceId;
+    String? faceEnc;
     if (state.needFace) {
       faceId = await api.getFaceId();
+      if (faceId != null && faceId.isNotEmpty) {
+        faceEnc = await api.getFaceEnc(params.active.id, faceId);
+      }
     }
 
     return await api.qrCodeSign(
@@ -49,7 +53,8 @@ class QRCodeSign implements SignStrategy {
       longitude: params.longitude,
       enc2: enc2,
       validate: validate,
-      faceId: faceId
+      faceId: faceId,
+      faceEnc: faceEnc
     );
   }
 

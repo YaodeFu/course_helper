@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:native_exif/native_exif.dart';
@@ -100,9 +101,6 @@ class SignInApi extends Api {
     
     final data = response.data;
     // {"result":1,"msg":"获取成功","data":{"http":"http://p.ananas.chaoxing.com/star3/origin/$objectid.jpg","objectid":objectid},"errorMsg":""}
-    // 如果没有采集过人脸则为空字符串
-    if (data['result'] == 1) {
-      return data['data']['objectid'];
     if (data['result'] == 1 && data['data'] != null) {
       final String? imageUrl = data['data']['http'];
       final String? originalObjectId = data['data']['objectid'];
@@ -143,13 +141,51 @@ class SignInApi extends Api {
     }
     return null;
   }
+
+  /// 获取人脸加密参数
+  Future<String?> getFaceEnc(String activeId, String faceId) async {
+    final url = 'https://mobilelearn.chaoxing.com/pptSign/check-face-result';
+    final timeStampMS = DateTime.now().millisecondsSinceEpoch.toString();
+    final faceResult = {
+      "currentFaceId": faceId,
+      "LiveDetectionStatus": '1',
+      "collectStatus": '1',
+      "cxcid": user!.deviceInfo!['cid'],
+      "cxtime": timeStampMS
+    };
+
+    final sortedKeys = faceResult.keys.toList()..sort();
+    final buffer = StringBuffer();
+    for (final key in sortedKeys) {
+      final value = faceResult[key] ?? '';
+      buffer.write('$key$value');
+    }
+    buffer.write(user!.deviceInfo!['sc']);
+
+    final signToken = EncryptionUtil.md5Hash(buffer.toString());
+    faceResult['signToken'] = signToken;
+
+    final params = {
+      "DB_STRATEGY": "PRIMARY_KEY",
+      "STRATEGY_PARA": "activeId",
+      "activeId": activeId,
+      "faceResult": jsonEncode(faceResult)
+    };
+
+    final response = await ApiService.sendRequest(url, params: params, userId: user?.uid);
+    if (response == null) return null;
+
+    final data = response.data;
+    // {"status":1,"enc":""}
+    if (data['status'] == 1) {
+      return data['enc'];
     }
     return null;
   }
 
   /// 位置签到
   Future<String?> locationSign(String courseId, String activeId, String address,
-      double latitude, double longitude, {String? validate, String? faceId}) async {
+      double latitude, double longitude, {String? validate, String? faceId, String? faceEnc}) async {
     final params = {
       'name': user?.name ?? '',
       'address': address,
@@ -167,7 +203,8 @@ class SignInApi extends Api {
       'vpProbability': '-1', // 此定位点作弊概率，3代表高概率，2代表中概率，1代表低概率，0代表概率为0
       'vpStrategy': '', // 防作弊策略识别码，用于辅助分析排查问题
       'currentFaceId': '',
-      'ifCFP': '0'
+      'ifCFP': '0',
+      'faceEnc': ''
     };
 
     if (validate == null) {
@@ -176,8 +213,12 @@ class SignInApi extends Api {
       params['validate'] = validate;
     }
 
-    if (faceId != null){
+    if (faceId != null) {
       params['currentFaceId'] = faceId;
+      params['ifCFP'] = '1';
+    }
+    if (faceEnc != null) {
+      params['faceEnc'] = faceEnc;
     }
 
     final response = await ApiService.sendRequest(_signUrl, params: params, responseType: ResponseType.plain, userId: user?.uid);
@@ -200,7 +241,7 @@ class SignInApi extends Api {
   /// 需要验证码时第一次发送会返回validate_${enc2}
   /// enc2用于固定enc
   Future<String?> qrCodeSign(String courseId, String activeId, String enc,
-      {String? address, double? latitude, double? longitude, String? enc2, String? validate, String? faceId}) async {
+      {String? address, double? latitude, double? longitude, String? enc2, String? validate, String? faceId, String? faceEnc}) async {
     final params = {
       'enc': enc,
       'name': user?.name ?? '',
@@ -219,7 +260,8 @@ class SignInApi extends Api {
       'validate': '',
       'currentFaceId': '',
       'ifCFP': '0',
-      'courseId': courseId
+      'courseId': courseId,
+      'faceEnc': ''
     };
 
     if (address != null && latitude != null && longitude != null) {
@@ -235,8 +277,12 @@ class SignInApi extends Api {
       params['validate'] = validate;
     }
 
-    if (faceId != null){
+    if (faceId != null) {
       params['currentFaceId'] = faceId;
+      params['ifCFP'] = '1';
+    }
+    if (faceEnc != null) {
+      params['faceEnc'] = faceEnc;
     }
 
     final response = await ApiService.sendRequest(_signUrl, params: params, responseType: ResponseType.plain, userId: user?.uid);

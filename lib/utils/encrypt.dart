@@ -29,8 +29,8 @@ class Constant {
   // 设备指纹
   static const deviceCodeKey = 'QrCbNY@MuK1X8HGw';
 
-  // getDeviceInfo RSA公钥
-  static const rsaPublicKey = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC79d8Ot0hCbxxSISC6x8SCwTBspFSzlLKHJUYqoFNu1TSRaw4hEYkOnvEaL1VyoxV6HXcDrzwYvaFZaZaPQPFnfCHZy5dQwxcmifgSHqS+oKXw40Ys4cVIqnU5d90S7EWSRdBglX489jlqVaNcQSkDx2TYmC+DbAq9FV/BU09ISQIDAQAB';
+  // getDeviceInfo 公钥/decryptDeviceInfo 私钥
+  static const rsaKey = 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC79d8Ot0hCbxxSISC6x8SCwTBspFSzlLKHJUYqoFNu1TSRaw4hEYkOnvEaL1VyoxV6HXcDrzwYvaFZaZaPQPFnfCHZy5dQwxcmifgSHqS+oKXw40Ys4cVIqnU5d90S7EWSRdBglX489jlqVaNcQSkDx2TYmC+DbAq9FV/BU09ISQIDAQAB';
 
   // inf_enc
   static const infEncToken = "4faa8662c59590c6f43ae9fe5b002b42";
@@ -115,26 +115,7 @@ class EncryptionUtil {
 
   /// RSA 公钥加密（PKCS#1 v1.5） 自动分段
   static String rsaEncrypt(String text, String publicKeyBase64) {
-    // 解析公钥
-    final keyDer = base64.decode(publicKeyBase64);
-    final asn1Parser = ASN1Parser(Uint8List.fromList(keyDer));
-    final topLevelSeq = asn1Parser.nextObject() as ASN1Sequence;
-
-    final asn1Objects = topLevelSeq.elements!;
-    
-    // 第二个元素是 BIT STRING，包含实际的 RSA 公钥
-    final bitString = asn1Objects[1] as ASN1BitString;
-    final publicKeyBytes = bitString.valueBytes!.sublist(1);
-    
-    // 解析内部的 RSAPublicKey
-    final publicKeyParser = ASN1Parser(Uint8List.fromList(publicKeyBytes));
-    final publicKeySeq = publicKeyParser.nextObject() as ASN1Sequence;
-    final publicKeyElements = publicKeySeq.elements!;
-    
-    final modulusBigInt = (publicKeyElements[0] as ASN1Integer).integer!;
-    final exponentBigInt = (publicKeyElements[1] as ASN1Integer).integer!;
-    final publicKey = RSAPublicKey(modulusBigInt, exponentBigInt);
-
+    final publicKey = _parsePublicKey(publicKeyBase64);
     final keyLength = (publicKey.modulus!.bitLength + 7) ~/ 8; // 1024 位 => 128 字节
     final maxChunkSize = keyLength - 11; // PKCS#1 填充最多 117 字节
 
@@ -145,7 +126,7 @@ class EncryptionUtil {
     for (int i = 0; i < plainBytes.length; i += maxChunkSize) {
       final end = (i + maxChunkSize) < plainBytes.length ? i + maxChunkSize : plainBytes.length;
       final chunk = plainBytes.sublist(i, end);
-      
+
       final cipher = PKCS1Encoding(RSAEngine());
       cipher.init(true, PublicKeyParameter<RSAPublicKey>(publicKey));
       final encrypted = cipher.process(chunk);
@@ -162,6 +143,81 @@ class EncryptionUtil {
     }
 
     return base64.encode(allEncrypted);
+  }
+
+  /// RSA 公钥解密（PKCS#1 v1.5） 自动分段
+  static String rsaDecrypt(String ciphertextBase64, String publicKeyBase64) {
+    if (ciphertextBase64.isEmpty) return "";
+    try {
+      final publicKey = _parsePublicKey(publicKeyBase64);
+      final keyLength = (publicKey.modulus!.bitLength + 7) ~/ 8;
+      final cipherBytes = base64.decode(ciphertextBase64);
+
+      final decryptedChunks = <Uint8List>[];
+      for (int i = 0; i < cipherBytes.length; i += keyLength) {
+        final end = (i + keyLength) < cipherBytes.length ? i + keyLength : cipherBytes.length;
+        final chunk = cipherBytes.sublist(i, end);
+
+        final engine = RSAEngine();
+        engine.init(false, PublicKeyParameter<RSAPublicKey>(publicKey));
+        final output = engine.process(chunk);
+
+        final unpadded = _pkcs1Unpad(output);
+        if (unpadded != null) {
+          decryptedChunks.add(unpadded);
+        }
+      }
+
+      final totalLen = decryptedChunks.fold(0, (sum, chunk) => sum + chunk.length);
+      final allDecrypted = Uint8List(totalLen);
+      int offset = 0;
+      for (final chunk in decryptedChunks) {
+        allDecrypted.setRange(offset, offset + chunk.length, chunk);
+        offset += chunk.length;
+      }
+
+      return utf8.decode(allDecrypted, allowMalformed: true);
+    } catch (e) {
+      return "";
+    }
+  }
+
+  /// 解析 RSA 公钥
+  static RSAPublicKey _parsePublicKey(String publicKeyBase64) {
+    final keyDer = base64.decode(publicKeyBase64);
+    final asn1Parser = ASN1Parser(Uint8List.fromList(keyDer));
+    final topLevelSeq = asn1Parser.nextObject() as ASN1Sequence;
+    final bitString = topLevelSeq.elements![1] as ASN1BitString;
+    final publicKeyBytes = bitString.valueBytes!.sublist(1);
+    final publicKeyParser = ASN1Parser(Uint8List.fromList(publicKeyBytes));
+    final publicKeySeq = publicKeyParser.nextObject() as ASN1Sequence;
+    final modulusBigInt = (publicKeySeq.elements![0] as ASN1Integer).integer!;
+    final exponentBigInt = (publicKeySeq.elements![1] as ASN1Integer).integer!;
+    return RSAPublicKey(modulusBigInt, exponentBigInt);
+  }
+
+  /// PKCS#1 v1.5 解包 (兼容 BT 1 & 2)
+  static Uint8List? _pkcs1Unpad(Uint8List paddedData) {
+    if (paddedData.length < 3) return null;
+    int bt;
+    int dataStart;
+    if (paddedData[0] == 0x00) {
+      bt = paddedData[1];
+      dataStart = 2;
+    } else {
+      bt = paddedData[0];
+      dataStart = 1;
+    }
+    if (bt != 1 && bt != 2) return null;
+    int sepIndex = -1;
+    for (int i = dataStart; i < paddedData.length; i++) {
+      if (paddedData[i] == 0x00) {
+        sepIndex = i;
+        break;
+      }
+    }
+    if (sepIndex == -1 || sepIndex + 1 >= paddedData.length) return null;
+    return paddedData.sublist(sepIndex + 1);
   }
 
   static String md5Hash(String text) {
