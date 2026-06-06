@@ -15,11 +15,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [macos-latest]
         # os: [ubuntu-latest, macos-latest]
         include:
-          - os: ubuntu-latest
-            platform: android
+          - os: macos-latest
+            platform: ios
           # - os: macos-latest
           #   platform: ios
     steps:
@@ -53,54 +53,54 @@ jobs:
           echo "APP_VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Using app version: $VERSION"
 
-      - name: Setup Android signing (Android only)
-        if: matrix.platform == 'android'
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/anerycoft.jks
-          echo "storePassword=${{ secrets.STORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
-          echo "storeFile=../anerycoft.jks" >> android/key.properties
-
-      - name: Build Android APK (split-per-abi)
-        if: matrix.platform == 'android'
-        run: flutter build apk --release --split-per-abi
-
-      - name: Rename APKs
-        if: matrix.platform == 'android'
-        run: |
-          VERSION="${{ steps.version.outputs.APP_VERSION }}"
-          cd build/app/outputs/flutter-apk
-          for file in app-*-release.apk; do
-            abi=$(echo "$file" | sed -E 's/app-(.*)-release\.apk/\1/')
-            mv "$file" "CourseHelper_${VERSION}_${abi}.apk"
-          done
-          ls -l
-
-      - name: Upload Android artifacts
-        if: matrix.platform == 'android'
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: build/app/outputs/flutter-apk/CourseHelper_*.apk   # 匹配重命名后的文件
-          if-no-files-found: error
-
-      # - name: Build iOS
-      #   if: matrix.platform == 'ios'
+      # - name: Setup Android signing (Android only)
+      #   if: matrix.platform == 'android'
       #   run: |
-      #     flutter build ios --release --no-codesign
-      #     cd build/ios/iphoneos
-      #     mkdir Payload
-      #     cp -r Runner.app Payload/
-      #     zip -r CourseHelper.ipa Payload
+      #     echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/anerycoft.jks
+      #     echo "storePassword=${{ secrets.STORE_PASSWORD }}" > android/key.properties
+      #     echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+      #     echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+      #     echo "storeFile=../anerycoft.jks" >> android/key.properties
 
-      # - name: Upload iOS artifacts
-      #   if: matrix.platform == 'ios'
+      # - name: Build Android APK (split-per-abi)
+      #   if: matrix.platform == 'android'
+      #   run: flutter build apk --release --split-per-abi
+
+      # - name: Rename APKs
+      #   if: matrix.platform == 'android'
+      #   run: |
+      #     VERSION="${{ steps.version.outputs.APP_VERSION }}"
+      #     cd build/app/outputs/flutter-apk
+      #     for file in app-*-release.apk; do
+      #       abi=$(echo "$file" | sed -E 's/app-(.*)-release\.apk/\1/')
+      #       mv "$file" "CourseHelper_${VERSION}_${abi}.apk"
+      #     done
+      #     ls -l
+
+      # - name: Upload Android artifacts
+      #   if: matrix.platform == 'android'
       #   uses: actions/upload-artifact@v4
       #   with:
-      #     name: ios-ipa
-      #     path: build/ios/iphoneos/CourseHelper.ipa
+      #     name: android-apk
+      #     path: build/app/outputs/flutter-apk/CourseHelper_*.apk   # 匹配重命名后的文件
       #     if-no-files-found: error
+
+      - name: Build iOS
+        if: matrix.platform == 'ios'
+        run: |
+          flutter build ios --release --no-codesign
+          cd build/ios/iphoneos
+          mkdir Payload
+          cp -r Runner.app Payload/
+          zip -r CourseHelper.ipa Payload
+
+      - name: Upload iOS artifacts
+        if: matrix.platform == 'ios'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/ios/iphoneos/CourseHelper.ipa
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release
